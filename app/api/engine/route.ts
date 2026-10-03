@@ -99,11 +99,7 @@ export async function POST(req: Request) {
           cleanup();
 
           const moveEntries = Object.values(allMoves);
-          const maxDepth = moveEntries.length > 0 ? Math.max(...moveEntries.map(e => e.depth)) : 0;
-
-          const validEntries = moveEntries
-            .filter(e => e.depth >= Math.max(1, maxDepth - 1))
-            .map(e => e.data);
+          const validEntries = moveEntries.map(e => e.data);
 
           validEntries.sort((a, b) => a.multiPvIndex - b.multiPvIndex);
 
