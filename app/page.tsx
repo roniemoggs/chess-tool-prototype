@@ -396,20 +396,23 @@ export default function Home() {
   function pickTwoRandomGoodMoves(moves: any[], historyCount?: number) {
     if (!moves || moves.length === 0) return [];
 
-    const topMove = moves[0];
+    // Ensure moves are unique by UCI move string
+    const uniqueMoves = moves.filter((m, index, self) => index === self.findIndex((t) => t.move === m.move));
+
+    const topMove = uniqueMoves[0];
     // Condition 2 — Forced Checkmate in 3 or Less (Highest Priority)
     if (topMove && topMove.scoreType === 'mate' && topMove.rawScore > 0 && topMove.rawScore <= 3) {
       return [topMove];
     }
 
     // Obvious Position Exception — strictly suggest only Top 1 move when position is Obvious
-    const diff = getPositionDifficulty(moves);
+    const diff = getPositionDifficulty(uniqueMoves);
     if (diff && diff.catName === 'Obvious') {
       return [topMove];
     }
 
     const { limit } = getGoodMovePoolLimit(historyCount);
-    const pool = moves.slice(0, limit);
+    const pool = uniqueMoves.slice(0, limit);
 
     if (pool.length <= 2) {
       return [...pool].sort((a, b) => (a.rank || 0) - (b.rank || 0));
@@ -1894,135 +1897,150 @@ export default function Home() {
 
 
 
-                {!stockfishEnabled ? (
-                  <p className="text-gray-500 text-sm italic bg-gray-950/50 p-4 rounded-xl border border-gray-800/50">
-                    Stockfish engine is currently turned OFF. Toggle the switch ON at the top to see live best moves.
-                  </p>
-                ) : gameMode === 'random' && game.turn() !== (boardOrientation === 'white' ? 'w' : 'b') ? (
-                  <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-800/40 text-purple-200/90 text-sm flex items-center gap-3">
-                    <span className="text-xl">⏳</span>
-                    <div>
-                      <p className="font-semibold text-purple-200">Opponent's Turn ({game.turn() === 'w' ? 'White' : 'Black'})</p>
-                      <p className="text-xs text-purple-300/70 mt-0.5">Rule 1 active: Opponent moves and arrows are completely hidden in Random Mode during opponent's turn ({game.turn() === 'w' ? 'White' : 'Black'}).</p>
+                <div className="min-h-[320px] flex flex-col justify-start">
+                  {!stockfishEnabled ? (
+                    <div className="min-h-[320px] flex flex-col items-center justify-center text-center p-6 bg-gray-950/50 rounded-xl border border-gray-800/50">
+                      <span className="text-3xl mb-2 opacity-40">⚙️</span>
+                      <p className="text-gray-400 text-sm font-semibold">Stockfish Engine is OFF</p>
+                      <p className="text-gray-500 text-xs mt-1 max-w-xs">Toggle the switch ON at the top to see live best moves and position evaluation.</p>
                     </div>
-                  </div>
-                ) : gameMode === 'random' && timingEnabled && isDelaying ? (
-                  <div className="p-5 bg-gradient-to-r from-purple-950/90 via-indigo-950/80 to-purple-950/90 border border-purple-600/70 rounded-2xl shadow-xl flex flex-col gap-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-3xl animate-spin text-purple-400">⏳</span>
-                        <div>
-                          <p className="font-bold text-sm text-purple-100 flex items-center gap-2">
-                            Move Suggestion Delay Active
-                            <span className="px-2 py-0.5 rounded bg-purple-900 text-[10px] text-purple-300 font-mono font-extrabold animate-pulse">
-                              COUNTDOWN
-                            </span>
-                          </p>
-                          <p className="text-xs text-purple-300/80 mt-0.5">
-                            Move suggestion will reveal in <span className="font-bold text-white font-mono text-sm">{delayRemaining}s</span>
-                          </p>
+                  ) : gameMode === 'random' && game.turn() !== (boardOrientation === 'white' ? 'w' : 'b') ? (
+                    <div className="min-h-[320px] flex flex-col items-center justify-center text-center p-6 bg-purple-950/30 rounded-xl border border-purple-800/40 text-purple-200/90">
+                      <span className="text-3xl mb-2 animate-pulse">⏳</span>
+                      <p className="font-bold text-sm text-purple-200">Opponent's Turn ({game.turn() === 'w' ? 'White' : 'Black'})</p>
+                      <p className="text-xs text-purple-300/70 mt-1 max-w-xs">
+                        Rule 1 active: Opponent moves and arrows are completely hidden in Random Mode during opponent's turn ({game.turn() === 'w' ? 'White' : 'Black'}).
+                      </p>
+                    </div>
+                  ) : gameMode === 'random' && timingEnabled && isDelaying ? (
+                    <div className="min-h-[320px] p-5 bg-gradient-to-r from-purple-950/90 via-indigo-950/80 to-purple-950/90 border border-purple-600/70 rounded-2xl shadow-xl flex flex-col justify-between">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-3xl animate-spin text-purple-400">⏳</span>
+                          <div>
+                            <p className="font-bold text-sm text-purple-100 flex items-center gap-2">
+                              Move Suggestion Delay Active
+                              <span className="px-2 py-0.5 rounded bg-purple-900 text-[10px] text-purple-300 font-mono font-extrabold animate-pulse">
+                                COUNTDOWN
+                              </span>
+                            </p>
+                            <p className="text-xs text-purple-300/80 mt-0.5">
+                              Move suggestion will reveal in <span className="font-bold text-white font-mono text-sm">{delayRemaining}s</span>
+                            </p>
+                          </div>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => clearDelayTimers()}
+                          className="px-2.5 py-1 bg-purple-900/80 hover:bg-purple-800 text-purple-200 border border-purple-700 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                          title="Skip remaining delay and reveal moves immediately"
+                        >
+                          Skip Delay
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => clearDelayTimers()}
-                        className="px-2.5 py-1 bg-purple-900/80 hover:bg-purple-800 text-purple-200 border border-purple-700 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                        title="Skip remaining delay and reveal moves immediately"
-                      >
-                        Skip Delay
-                      </button>
-                    </div>
 
-                    {/* Delay difficulty hint */}
-                    {bestMoves && bestMoves.length > 0 && (() => {
-                      const diff = getPositionDifficulty(bestMoves);
-                      if (!diff) return null;
-                      return (
-                        <div className={`p-2 rounded-lg border text-xs flex items-center justify-between ${diff.bBg} ${diff.bTxt} ${diff.bBdr}`}>
-                          <span className="font-bold flex items-center gap-1.5">
-                            <span>{diff.iconTag}</span> Position Rating: {diff.catName.toUpperCase()} ({diff.subLabel})
-                          </span>
-                          <span className="text-[10px] font-sans text-gray-300">Calculate during countdown!</span>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Progress Bar */}
-                    <div className="w-full bg-gray-950 h-2.5 rounded-full overflow-hidden border border-purple-900/60">
-                      <div
-                        className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-400 transition-all duration-300 ease-linear"
-                        style={{
-                          width: `${totalDelay > 0 ? Math.min(100, Math.max(0, ((totalDelay - delayRemaining) / totalDelay) * 100)) : 100}%`,
-                        }}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-purple-300/70 font-mono">
-                      <span>Randomly selected delay: {totalDelay}s</span>
-                      {connectDifficultyDelay && bestMoves && bestMoves.length > 0 ? (() => {
+                      {/* Delay difficulty hint */}
+                      {bestMoves && bestMoves.length > 0 && (() => {
                         const diff = getPositionDifficulty(bestMoves);
-                        const cat = (diff?.catName || 'Normal') as DifficultyCategory;
-                        const preset = difficultyPresets[cat] || DEFAULT_DIFFICULTY_PRESETS['Normal'];
-                        return <span>Preset ({cat}): {preset.min}s–{preset.max}s</span>;
-                      })() : (
-                        <span>Range: {minDelay}s–{maxDelay}s (Max 60s)</span>
+                        if (!diff) return null;
+                        return (
+                          <div className={`p-2 rounded-lg border text-xs flex items-center justify-between ${diff.bBg} ${diff.bTxt} ${diff.bBdr}`}>
+                            <span className="font-bold flex items-center gap-1.5">
+                              <span>{diff.iconTag}</span> Position Rating: {diff.catName.toUpperCase()} ({diff.subLabel})
+                            </span>
+                            <span className="text-[10px] font-sans text-gray-300">Calculate during countdown!</span>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Progress Bar */}
+                      <div className="w-full bg-gray-950 h-2.5 rounded-full overflow-hidden border border-purple-900/60">
+                        <div
+                          className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-400 transition-all duration-300 ease-linear"
+                          style={{
+                            width: `${totalDelay > 0 ? Math.min(100, Math.max(0, ((totalDelay - delayRemaining) / totalDelay) * 100)) : 100}%`,
+                          }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-purple-300/70 font-mono">
+                        <span>Randomly selected delay: {totalDelay}s</span>
+                        {connectDifficultyDelay && bestMoves && bestMoves.length > 0 ? (() => {
+                          const diff = getPositionDifficulty(bestMoves);
+                          const cat = (diff?.catName || 'Normal') as DifficultyCategory;
+                          const preset = difficultyPresets[cat] || DEFAULT_DIFFICULTY_PRESETS['Normal'];
+                          return <span>Preset ({cat}): {preset.min}s–{preset.max}s</span>;
+                        })() : (
+                          <span>Range: {minDelay}s–{maxDelay}s (Max 60s)</span>
+                        )}
+                      </div>
+                    </div>
+                  ) : displayedBestMoves.length === 0 ? (
+                    <div className="min-h-[320px] flex flex-col items-center justify-center text-center p-6 bg-gray-950/50 rounded-xl border border-gray-800/50">
+                      {evaluating ? (
+                        <>
+                          <span className="animate-spin text-3xl text-indigo-400 mb-3">⚙</span>
+                          <p className="text-gray-300 text-sm font-semibold">Calculating best moves...</p>
+                          <p className="text-gray-500 text-xs mt-1">Stockfish engine is analyzing the position</p>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-3xl mb-2 text-gray-600">♟️</span>
+                          <p className="text-gray-400 text-sm font-semibold">No evaluations available</p>
+                          <p className="text-gray-500 text-xs mt-1">Check game position or engine status</p>
+                        </>
                       )}
                     </div>
-                  </div>
-                ) : displayedBestMoves.length === 0 ? (
-                  <p className="text-gray-500 text-sm italic bg-gray-950/50 p-4 rounded-xl border border-gray-800/50 flex items-center gap-2">
-                    {evaluating ? <span className="animate-spin">⚙</span> : null}
-                    {evaluating ? 'Stockfish is calculating best moves...' : 'No evaluations available.'}
-                  </p>
-                ) : (
-                  <ul className="space-y-1.5 max-h-[360px] overflow-y-auto pr-1">
-                    {displayedBestMoves.map((moveData, i) => (
-                      <li
-                        key={moveData.move || i}
-                        onMouseEnter={() => setHoveredMove(moveData.move)}
-                        onMouseLeave={() => setHoveredMove(null)}
-                        onClick={() => makeAMoveFromUCI(moveData.move)}
-                        className={`flex justify-between items-center p-2.5 rounded-xl border transition-all cursor-pointer ${
-                          moveData.isTriggeredBadMove
-                            ? 'bg-amber-950/90 border-amber-500 scale-[1.01] shadow-lg shadow-amber-900/40'
-                            : hoveredMove === moveData.move
-                            ? 'bg-green-950/80 border-green-500 scale-[1.01] shadow-lg shadow-green-900/30'
-                            : 'bg-gray-800/80 hover:bg-gray-800 border-green-900/40'
-                        }`}
-                        title="Click to play this move on the board"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className={`flex items-center justify-center w-7 h-7 rounded-full font-black text-xs shadow shrink-0 ${
+                  ) : (
+                    <ul className="space-y-1.5 min-h-[320px] max-h-[360px] overflow-y-auto pr-1">
+                      {displayedBestMoves.map((moveData, i) => (
+                        <li
+                          key={`best-move-${moveData.move || 'unknown'}-${moveData.rank || i}-${i}`}
+                          onMouseEnter={() => setHoveredMove(moveData.move)}
+                          onMouseLeave={() => setHoveredMove(null)}
+                          onClick={() => makeAMoveFromUCI(moveData.move)}
+                          className={`flex justify-between items-center p-2.5 rounded-xl border transition-all cursor-pointer ${
                             moveData.isTriggeredBadMove
-                              ? 'bg-amber-500 text-gray-950'
-                              : 'bg-green-500 text-gray-950'
+                              ? 'bg-amber-950/90 border-amber-500 scale-[1.01] shadow-lg shadow-amber-900/40'
+                              : hoveredMove === moveData.move
+                              ? 'bg-green-950/80 border-green-500 scale-[1.01] shadow-lg shadow-green-900/30'
+                              : 'bg-gray-800/80 hover:bg-gray-800 border-green-900/40'
+                          }`}
+                          title="Click to play this move on the board"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className={`flex items-center justify-center w-7 h-7 rounded-full font-black text-xs shadow shrink-0 ${
+                              moveData.isTriggeredBadMove
+                                ? 'bg-amber-500 text-gray-950'
+                                : 'bg-green-500 text-gray-950'
+                            }`}>
+                              {moveData.isTriggeredBadMove ? '⚠️' : `#${moveData.rank || i + 1}`}
+                            </span>
+                            <span className={`font-mono text-base font-bold tracking-wide ${
+                              moveData.isTriggeredBadMove ? 'text-amber-400' : 'text-green-400'
+                            }`}>{moveData.move}</span>
+                            {moveData.isTriggeredBadMove ? (
+                              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 font-bold">
+                                Random Bad Move
+                              </span>
+                            ) : gameMode === 'random' && (
+                              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-green-950/90 text-green-300 border border-green-800/70 font-bold">
+                                M{moveData.rank || i + 1}
+                              </span>
+                            )}
+                          </div>
+                          <span className={`font-mono px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+                            moveData.isTriggeredBadMove
+                              ? 'bg-amber-950 text-amber-300 border-amber-800/50'
+                              : 'bg-green-950 text-green-300 border-green-800/50'
                           }`}>
-                            {moveData.isTriggeredBadMove ? '⚠️' : `#${moveData.rank || i + 1}`}
+                            Eval: {parseFloat(moveData.scoreStr) > 0 ? '+' : ''}{moveData.scoreStr}
                           </span>
-                          <span className={`font-mono text-base font-bold tracking-wide ${
-                            moveData.isTriggeredBadMove ? 'text-amber-400' : 'text-green-400'
-                          }`}>{moveData.move}</span>
-                          {moveData.isTriggeredBadMove ? (
-                            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 font-bold">
-                              Random Bad Move
-                            </span>
-                          ) : gameMode === 'random' && (
-                            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-green-950/90 text-green-300 border border-green-800/70 font-bold">
-                              M{moveData.rank || i + 1}
-                            </span>
-                          )}
-                        </div>
-                        <span className={`font-mono px-2.5 py-1 rounded-lg text-xs font-semibold border ${
-                          moveData.isTriggeredBadMove
-                            ? 'bg-amber-950 text-amber-300 border-amber-800/50'
-                            : 'bg-green-950 text-green-300 border-green-800/50'
-                        }`}>
-                          Eval: {parseFloat(moveData.scoreStr) > 0 ? '+' : ''}{moveData.scoreStr}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
 

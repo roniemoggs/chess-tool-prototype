@@ -34,13 +34,32 @@ export interface EvaluateOptions {
 class StockfishClient {
   private worker: Worker | null = null;
   private currentReject: ((reason?: any) => void) | null = null;
+  private currentMessageHandler: ((e: MessageEvent) => void) | null = null;
+  private currentErrorHandler: ((err: ErrorEvent) => void) | null = null;
   private activeScriptPath: string = '/stockfish/stockfish-19-asm.js';
 
-  public terminateCurrent() {
+  public stopCurrent() {
     if (this.currentReject) {
       this.currentReject(new Error('Evaluation cancelled'));
       this.currentReject = null;
     }
+    if (this.worker) {
+      if (this.currentMessageHandler) {
+        this.worker.removeEventListener('message', this.currentMessageHandler);
+        this.currentMessageHandler = null;
+      }
+      if (this.currentErrorHandler) {
+        this.worker.removeEventListener('error', this.currentErrorHandler);
+        this.currentErrorHandler = null;
+      }
+      try {
+        this.worker.postMessage('stop');
+      } catch (e) {}
+    }
+  }
+
+  public terminateCurrent() {
+    this.stopCurrent();
     if (this.worker) {
       try {
         this.worker.terminate();
@@ -49,14 +68,22 @@ class StockfishClient {
     }
   }
 
+  private getOrCreateWorker(): Worker {
+    if (!this.worker) {
+      this.worker = new Worker(this.activeScriptPath);
+      this.worker.postMessage('uci');
+    }
+    return this.worker;
+  }
+
   public async evaluate(options: EvaluateOptions): Promise<EngineEvalResult> {
     const { fen, depth = 10, limit = 10, includeWorst = false, onProgress, signal } = options;
     const activeColor = fen.split(' ')[1] || 'w';
-    const moveCount = typeof limit === 'number' && limit > 0 ? limit : 10;
-    const multiPvValue = includeWorst ? Math.min(Math.max(moveCount, 12), 20) : Math.min(moveCount, 12);
+    const moveCount = typeof limit === 'number' && limit > 0 ? limit : 5;
+    const multiPvValue = includeWorst ? Math.min(moveCount + 5, 12) : moveCount;
 
-    // Cancel and terminate any active previous worker search cleanly
-    this.terminateCurrent();
+    // Stop previous calculation cleanly without destroying worker thread
+    this.stopCurrent();
 
     return new Promise<EngineEvalResult>((resolve, reject) => {
       if (typeof window === 'undefined') {
@@ -69,30 +96,35 @@ class StockfishClient {
 
       let worker: Worker;
       try {
-        worker = new Worker(this.activeScriptPath);
-        this.worker = worker;
+        worker = this.getOrCreateWorker();
       } catch (err) {
-        this.currentReject = null;
+        this.terminateCurrent();
         return reject(err);
       }
 
-      const cleanup = () => {
+      const cleanupListeners = () => {
         if (isDone) return;
         isDone = true;
         this.currentReject = null;
-        if (this.worker === worker) {
-          try { worker.terminate(); } catch (e) {}
-          this.worker = null;
+        if (this.worker && handleMessage) {
+          this.worker.removeEventListener('message', handleMessage);
         }
+        if (this.worker && handleError) {
+          this.worker.removeEventListener('error', handleError);
+        }
+        this.currentMessageHandler = null;
+        this.currentErrorHandler = null;
       };
 
       if (signal) {
         if (signal.aborted) {
-          cleanup();
+          cleanupListeners();
+          try { worker.postMessage('stop'); } catch (e) {}
           return reject(new Error('Evaluation cancelled'));
         }
         signal.addEventListener('abort', () => {
-          cleanup();
+          cleanupListeners();
+          try { worker.postMessage('stop'); } catch (e) {}
           reject(new Error('Evaluation cancelled'));
         });
       }
@@ -187,21 +219,24 @@ class StockfishClient {
 
         if (line.includes('bestmove')) {
           const finalResult = buildResult();
-          cleanup();
+          cleanupListeners();
           resolve(finalResult);
         }
       };
 
       const handleError = (err: ErrorEvent) => {
-        cleanup();
+        cleanupListeners();
+        this.terminateCurrent();
         reject(err.error || new Error('Worker evaluation error'));
       };
+
+      this.currentMessageHandler = handleMessage;
+      this.currentErrorHandler = handleError;
 
       worker.addEventListener('message', handleMessage);
       worker.addEventListener('error', handleError);
 
-      // Start engine commands sequence
-      worker.postMessage('uci');
+      // Issue commands to existing worker thread directly
       worker.postMessage(`setoption name MultiPV value ${multiPvValue}`);
       worker.postMessage(`position fen ${fen}`);
       worker.postMessage(`go depth ${depth}`);

@@ -125,8 +125,8 @@ export async function POST(req: Request) {
         }
       };
 
-      // Limit MultiPV value to at most 15-20 moves to keep Stockfish ultra-fast and prevent CPU lockup
-      const multiPvValue = includeWorst ? Math.min(Math.max(moveCount, 12), 20) : Math.min(moveCount, 12);
+      // Optimize MultiPV count (calculate exact requested move count to maximize speed)
+      const multiPvValue = includeWorst ? Math.min(moveCount + 5, 12) : moveCount;
 
       if (useNative) {
         // --- NATIVE BINARY MODE (Local Windows PC) ---
