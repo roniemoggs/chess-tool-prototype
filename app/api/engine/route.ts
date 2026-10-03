@@ -21,9 +21,12 @@ export async function POST(req: Request) {
     const moveCount = typeof limit === 'number' && limit > 0 ? limit : 10;
     const activeColor = fen.split(' ')[1] || 'w';
 
-    // Terminate any previous running engine processes
+    // Terminate any previous running engine processes cleanly
     if (activeStockfish) {
-      try { activeStockfish.kill(); } catch (e) {}
+      try {
+        activeStockfish.stdin?.write('quit\n');
+        activeStockfish.kill();
+      } catch (e) {}
       activeStockfish = null;
     }
     if (activeWasmEngine) {
@@ -36,8 +39,11 @@ export async function POST(req: Request) {
 
     const results = await new Promise<{ best: any[], worst: any[], positionEval: any }>((resolve, reject) => {
       const allMoves: Record<number, { depth: number; data: any }> = {};
+      let cleanedUp = false;
 
       const handleParsedLine = (line: string, cleanup: () => void) => {
+        if (cleanedUp) return;
+
         if (line.includes('info') && line.includes('multipv')) {
           const depthMatch = line.match(/\bdepth (\d+)\b/);
           const multiPvMatch = line.match(/\bmultipv (\d+)\b/);
@@ -123,21 +129,29 @@ export async function POST(req: Request) {
         }
       };
 
+      // Limit MultiPV value to at most 15-20 moves to keep Stockfish ultra-fast and prevent CPU lockup
+      const multiPvValue = includeWorst ? Math.min(Math.max(moveCount, 12), 20) : Math.min(moveCount, 12);
+
       if (useNative) {
         // --- NATIVE BINARY MODE (Local Windows PC) ---
         const stockfish = spawn(/* turbopackIgnore: true */ localEnginePath);
         activeStockfish = stockfish;
 
         const cleanup = () => {
+          if (cleanedUp) return;
+          cleanedUp = true;
           clearTimeout(timeout);
-          try { stockfish.kill(); } catch (e) {}
+          try {
+            stockfish.stdin?.write('quit\n');
+            stockfish.kill();
+          } catch (e) {}
           if (activeStockfish === stockfish) activeStockfish = null;
         };
 
         const timeout = setTimeout(() => {
           cleanup();
           reject(new Error('Engine evaluation timed out'));
-        }, 20000);
+        }, 30000);
 
         if (req.signal) {
           req.signal.addEventListener('abort', () => {
@@ -151,8 +165,11 @@ export async function POST(req: Request) {
           buffer += data.toString();
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
-          for (const line of lines) {
-            handleParsedLine(line, cleanup);
+          for (let line of lines) {
+            line = line.trim();
+            if (line) {
+              handleParsedLine(line, cleanup);
+            }
           }
         });
 
@@ -165,7 +182,6 @@ export async function POST(req: Request) {
           reject(err);
         });
 
-        const multiPvValue = includeWorst ? 255 : moveCount;
         stockfish.stdin.write('uci\n');
         stockfish.stdin.write(`setoption name MultiPV value ${multiPvValue}\n`);
         stockfish.stdin.write(`position fen ${fen}\n`);
@@ -183,6 +199,8 @@ export async function POST(req: Request) {
             activeWasmEngine = engine;
 
             const cleanup = () => {
+              if (cleanedUp) return;
+              cleanedUp = true;
               clearTimeout(timeout);
               try { if (engine.terminate) engine.terminate(); } catch (e) {}
               if (activeWasmEngine === engine) activeWasmEngine = null;
@@ -191,7 +209,7 @@ export async function POST(req: Request) {
             const timeout = setTimeout(() => {
               cleanup();
               reject(new Error('Engine evaluation timed out'));
-            }, 20000);
+            }, 30000);
 
             if (req.signal) {
               req.signal.addEventListener('abort', () => {
@@ -201,10 +219,11 @@ export async function POST(req: Request) {
             }
 
             engine.print = (line: string) => {
-              handleParsedLine(line, cleanup);
+              if (typeof line === 'string') {
+                handleParsedLine(line.trim(), cleanup);
+              }
             };
 
-            const multiPvValue = includeWorst ? 255 : moveCount;
             engine.sendCommand('uci');
             engine.sendCommand(`setoption name MultiPV value ${multiPvValue}`);
             engine.sendCommand(`position fen ${fen}`);
@@ -227,3 +246,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Failed to evaluate position', details: error.message }, { status: 500 });
   }
 }
+
