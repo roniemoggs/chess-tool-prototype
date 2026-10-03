@@ -1,24 +1,14 @@
 import { NextResponse } from 'next/server';
 import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
+// @ts-ignore
+import initStockfishWasm from 'stockfish';
 
 const localEnginePath = process.env.STOCKFISH_PATH || 'e:\\chess engine\\stockfish-windows-x86-64-universal\\stockfish\\stockfish-windows-x86-64-universal.exe';
 
 // Keep track of active engine runs to prevent CPU saturation
 let activeStockfish: ChildProcess | null = null;
 let activeWasmEngine: any = null;
-
-function getStockfishWasm() {
-  try {
-    // Dynamic require so Turbopack/Webpack leaves stockfish as a serverExternalPackage
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const req = eval('require');
-    return req('stockfish');
-  } catch (e) {
-    console.warn('Stockfish WASM package warning:', e);
-    return null;
-  }
-}
 
 export async function POST(req: Request) {
   try {
@@ -183,9 +173,8 @@ export async function POST(req: Request) {
 
       } else {
         // --- WEBASSEMBLY (WASM) MODE (Vercel / Cloud Serverless) ---
-        const initStockfishWasm = getStockfishWasm();
-        if (!initStockfishWasm) {
-          return reject(new Error('Stockfish WASM engine package is not installed or available'));
+        if (typeof initStockfishWasm !== 'function') {
+          return reject(new Error('Stockfish WASM initializer is not available'));
         }
 
         (async () => {
