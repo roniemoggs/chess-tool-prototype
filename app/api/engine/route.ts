@@ -134,7 +134,7 @@ export async function POST(req: Request) {
 
       if (useNative) {
         // --- NATIVE BINARY MODE (Local Windows PC) ---
-        const stockfish = spawn(/* turbopackIgnore: true */ localEnginePath);
+        const stockfish = spawn(/*turbopackIgnore: true*/ localEnginePath);
         activeStockfish = stockfish;
 
         const cleanup = () => {
@@ -161,7 +161,7 @@ export async function POST(req: Request) {
         }
 
         let buffer = '';
-        stockfish.stdout.on('data', (data) => {
+        stockfish.stdout.on('data', (data: Buffer | string) => {
           buffer += data.toString();
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
@@ -173,11 +173,11 @@ export async function POST(req: Request) {
           }
         });
 
-        stockfish.stderr.on('data', (data) => {
+        stockfish.stderr.on('data', (data: Buffer | string) => {
           console.error(`Stockfish stderr: ${data}`);
         });
 
-        stockfish.on('error', (err) => {
+        stockfish.on('error', (err: Error) => {
           cleanup();
           reject(err);
         });
