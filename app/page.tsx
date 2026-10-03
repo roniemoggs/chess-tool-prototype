@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Chess, Square } from 'chess.js';
 import { Chessboard } from 'react-chessboard';
+import { stockfishClient } from './stockfish-client';
 
 interface CustomArrowData {
   id: string;
@@ -785,6 +786,8 @@ export default function Home() {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    stockfishClient.terminateCurrent();
+
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -792,30 +795,9 @@ export default function Home() {
     setErrorMessage('');
     setHoveredMove(null);
 
-    // Dynamic moves calculation limit optimization:
-    // If Top 5 is selected and Random Bad Move is disabled, calculate top 5 moves.
-    // Exception: If Random Bad Move is enabled, or Top 10 is selected, calculate top 10 moves.
     const effectiveLimit = (moveLimit === 5 && !randomBadMoveEnabled) ? 5 : 10;
 
-    try {
-      const response = await fetch('/api/engine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen, depth: 10, limit: effectiveLimit, includeWorst: randomBadMoveEnabled }),
-        signal: controller.signal,
-      });
-
-      if (reqId !== reqIdRef.current) return; // Stale request
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        if (response.status === 499 || errorData.aborted) {
-          return; // Normal cancellation
-        }
-        throw new Error(errorData.details || errorData.error || `Engine error: HTTP ${response.status}`);
-      }
-      
-      const data = await response.json();
+    const handleDataUpdate = (data: any) => {
       if (reqId !== reqIdRef.current) return;
 
       if (data.best) {
@@ -852,9 +834,53 @@ export default function Home() {
         setWorstMoves(data.worst);
       }
       if (data.positionEval) setPositionEval(data.positionEval);
+    };
+
+    try {
+      // 1. Primary: Fast Client-Side WebWorker Stockfish (like Lichess)
+      try {
+        const clientData = await stockfishClient.evaluate({
+          fen,
+          depth: 10,
+          limit: effectiveLimit,
+          includeWorst: randomBadMoveEnabled,
+          signal: controller.signal,
+          onProgress: (progressiveData) => {
+            handleDataUpdate(progressiveData);
+          }
+        });
+        handleDataUpdate(clientData);
+        return;
+      } catch (clientErr: any) {
+        if (clientErr.message === 'Evaluation cancelled' || controller.signal.aborted) {
+          return;
+        }
+        console.warn('Client-side Stockfish Worker unavailable, falling back to server API:', clientErr);
+      }
+
+      // 2. Secondary Fallback: Server API
+      const response = await fetch('/api/engine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fen, depth: 10, limit: effectiveLimit, includeWorst: randomBadMoveEnabled }),
+        signal: controller.signal,
+      });
+
+      if (reqId !== reqIdRef.current) return;
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 499 || errorData.aborted) {
+          return;
+        }
+        throw new Error(errorData.details || errorData.error || `Engine error: HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      handleDataUpdate(data);
     } catch (error: any) {
-      if (error.name === 'AbortError') {
-        return; // Intentionally aborted on new move
+      if (error.name === 'AbortError' || error.message === 'Evaluation cancelled') {
+        return;
       }
       if (reqId === reqIdRef.current) {
         console.error('Failed to evaluate position', error);
